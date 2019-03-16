@@ -54,6 +54,7 @@ from ansible.errors import AnsibleParserError
 from ansible.module_utils._text import to_bytes, to_native, to_text
 from ansible.module_utils.common._collections_compat import MutableMapping
 from ansible.plugins.inventory import BaseInventoryPlugin, Constructable, Cacheable
+from ansible.module_utils.common.process import get_bin_path
 
 
 class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
@@ -62,16 +63,22 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     NAME = 'virtualbox'
     VBOX = b"VBoxManage"
 
+    def __init__(self):
+        self._vbox_path = None
+        super(InventoryModule, self).__init__()
+
     def _query_vbox_data(self, host, property_path):
         ret = None
         try:
-            cmd = [self.VBOX, b'guestproperty', b'get', to_bytes(host, errors='surrogate_or_strict'), to_bytes(property_path, errors='surrogate_or_strict')]
+            cmd = [self._vbox_path, b'guestproperty', b'get',
+                   to_bytes(host, errors='surrogate_or_strict'),
+                   to_bytes(property_path, errors='surrogate_or_strict')]
             x = Popen(cmd, stdout=PIPE)
             ipinfo = to_text(x.stdout.read(), errors='surrogate_or_strict')
             if 'Value' in ipinfo:
                 a, ip = ipinfo.split(':', 1)
                 ret = ip.strip()
-        except:
+        except Exception:
             pass
         return ret
 
@@ -107,7 +114,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             if group == 'all':
                 continue
             else:
-                self.inventory.add_group(group)
+                group = self.inventory.add_group(group)
                 hosts = source_data[group].get('hosts', [])
                 for host in hosts:
                     self._populate_host_vars([host], hostvars.get(host, {}), group)
@@ -137,7 +144,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 continue
             try:
                 k, v = line.split(':', 1)
-            except:
+            except Exception:
                 # skip non splitable
                 continue
 
@@ -162,10 +169,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             elif k == 'Groups':
                 for group in v.split('/'):
                     if group:
+                        group = self.inventory.add_group(group)
+                        self.inventory.add_child(group, current_host)
                         if group not in cacheable_results:
                             cacheable_results[group] = {'hosts': []}
-                        self.inventory.add_group(group)
-                        self.inventory.add_child(group, current_host)
                         cacheable_results[group]['hosts'].append(current_host)
                 continue
 
@@ -216,6 +223,11 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
     def parse(self, inventory, loader, path, cache=True):
 
+        try:
+            self._vbox_path = get_bin_path(self.VBOX, True)
+        except ValueError as e:
+            raise AnsibleParserError(e)
+
         super(InventoryModule, self).parse(inventory, loader, path)
 
         cache_key = self.get_cache_key(path)
@@ -237,11 +249,11 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 update_cache = True
 
         if not source_data:
-            b_pwfile = to_bytes(self.get_option('settings_password_file'), errors='surrogate_or_strict')
+            b_pwfile = to_bytes(self.get_option('settings_password_file'), errors='surrogate_or_strict', nonstring='passthru')
             running = self.get_option('running_only')
 
             # start getting data
-            cmd = [self.VBOX, b'list', b'-l']
+            cmd = [self._vbox_path, b'list', b'-l']
             if running:
                 cmd.append(b'runningvms')
             else:

@@ -89,7 +89,7 @@ ansible_net_version:
 ansible_net_hostname:
   description: The configured hostname of the device
   returned: always
-  type: string
+  type: str
 
 # hardware
 ansible_net_memfree_mb:
@@ -310,7 +310,6 @@ class Interfaces(FactsBase):
         return facts
 
     def populate_interface_descriptions(self, data):
-        facts = dict()
         for elem in data:
             if 'show_ports_description' not in elem:
                 continue
@@ -444,7 +443,7 @@ def main():
 
     warnings = list()
 
-    module.exit_json(ansible_facts=ansible_facts)
+    module.exit_json(ansible_facts=ansible_facts, warnings=warnings)
 
 
 if __name__ == '__main__':
